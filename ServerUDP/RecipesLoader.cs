@@ -12,7 +12,11 @@ namespace ServerUDP
 			Config = _config;
 			if (Config != null)
 			{
-				DirectoryInfo RecipesDirectory = new DirectoryInfo(Config.TextDirectory);
+				////вариант с конфигом
+				//DirectoryInfo RecipesDirectory = new DirectoryInfo(Config.TextDirectory);
+				//FileInfo[] RecipeFiles = RecipesDirectory.GetFiles("*.txt");
+				//вариант с исходной директорией
+				DirectoryInfo RecipesDirectory = new DirectoryInfo(Directory.GetCurrentDirectory() + "\\Recipes");
 				FileInfo[] RecipeFiles = RecipesDirectory.GetFiles("*.txt");
 
 				for (int i = 0; i < RecipeFiles.Length; i++)
