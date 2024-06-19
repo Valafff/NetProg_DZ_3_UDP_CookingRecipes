@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 
 namespace ServerUDP
 {
-	internal class Config
+	public class Config
 	{
         public string TextDirectory { get; set; }
         public string ImageDirectory { get; set; }

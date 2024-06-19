@@ -8,7 +8,7 @@ using System.Threading.Tasks;
 
 namespace ServerUDP
 {
-	internal class Program
+	public class Program
 	{
 		const string ip = "127.0.0.1";
 		const int ReceiverPort = 2222;

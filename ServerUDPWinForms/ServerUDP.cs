@@ -9,20 +9,25 @@ using System.Threading.Tasks;
 
 namespace ServerUDP
 {
+	//Для передачи данных через событие
+	public delegate void MessageFromServer(string s);
+
 	//Работает в режиме приема и передачи
 	public class ServerUDP
-	{
-		const int serverPort = 2222;
-		const int MaxClientConnected = 5;
-		const int MaxClientRequest = 5;
-		const int ClientTimeLimit = 15;
-		//const int PacketSize = 8194;
+	{   //Извещение об отправлении сообщения
+		public event MessageFromServer MessageFromServerEvent;
 
-		UdpClient udpServer;
+		public int serverPort = 2222;
+		public int MaxClientConnected = 5;
+		public int MaxClientRequest = 5;
+		public int ClientTimeLimit = 15;
+
+
+		UdpClient udpServer = new UdpClient();
 		IPEndPoint ClientEndPoint = null;
 		List<Client> clientsPool = new List<Client>();
-		public List<Recipe> Recipes  = new List<Recipe>();
-        public class Client
+		public List<Recipe> Recipes = new List<Recipe>();
+		public class Client
 		{
 			public IPEndPoint EndPoint;
 			public long connTime;
@@ -42,9 +47,23 @@ namespace ServerUDP
 				udpServer.Close();
 			}
 		}
+		//Предача данных через событие
+		public void SendServiceMessege(string _inputmessage)
+		{
+			string timeNow = (DateTime.Now.Date + DateTime.Now.TimeOfDay).ToString();
+
+			MessageFromServerEvent(_inputmessage + "\t" + timeNow);
+		}
+
+		public void StopServer()
+		{
+			udpServer.Close();
+			SendServiceMessege("Сервер остановлен!");
+		}
 
 		public void ServerStart()
 		{
+			SendServiceMessege($"Сервер запущен! Размер буфера на прием равен {udpServer.Client.ReceiveBufferSize} Размер буфера на передачу равен {udpServer.Client.SendBufferSize}");
 			while (true)
 			{
 				udpServer = new UdpClient(serverPort);
@@ -53,7 +72,6 @@ namespace ServerUDP
 				{
 					while (true)
 					{
-
 						//!!!При получении первого пакета - узнаю конечную точку отправителя(клиента)	
 						byte[] udpReceiveResult = udpServer.Receive(ref ClientEndPoint);
 						CheckClient();
@@ -61,7 +79,7 @@ namespace ServerUDP
 						if (!clientsPool.Exists(f => f.EndPoint.Port == ClientEndPoint.Port) && clientsPool.Count < MaxClientConnected)
 						{
 							clientsPool.Add(tempCl);
-							Console.WriteLine($"Количество подключенных пользователей: {clientsPool.Count}");
+							SendServiceMessege($"Количество подключенных пользователей: {clientsPool.Count}");
 						}
 						else
 						{
@@ -77,10 +95,9 @@ namespace ServerUDP
 						if (clientsPool.Count <= MaxClientConnected && clientsPool.Exists(f => f.EndPoint.Port == ClientEndPoint.Port) && (clientsPool.Find(f => f.EndPoint.Port == ClientEndPoint.Port)).RequesNumber <= MaxClientRequest)
 						{
 							string res = Encoding.UTF8.GetString(udpReceiveResult);
-							Console.WriteLine($"Конечная точка клиента:{ClientEndPoint.Address} {ClientEndPoint.Port}");
+							SendServiceMessege($"Конечная точка клиента:{ClientEndPoint.Address} {ClientEndPoint.Port}");
+							SendServiceMessege($"Запрос клиента {ClientEndPoint.Address} {ClientEndPoint.Port}: {res}");
 
-							//Зная конечную точку клиента отправляю ему ответ
-							//udpServer.Send(udpReceiveResult, udpReceiveResult.Length, ClientEndPoint);
 							RecipeRequest(res);
 
 							foreach (var item in clientsPool)
@@ -98,9 +115,9 @@ namespace ServerUDP
 								clientsPool.Find(f => f.EndPoint.Port == ClientEndPoint.Port).shutDownTime = DateTime.UtcNow.AddHours(1);
 								clientsPool.Find(f => f.EndPoint.Port == ClientEndPoint.Port).shutdown = true;
 							}
-							string answer = $"Клиент {ClientEndPoint} превысил количество возможных запросов. Доступ будет разрешет через {clientsPool.Find(f => f.EndPoint.Port == ClientEndPoint.Port).shutDownTime - DateTime.UtcNow}";
+							string answer = $"Клиент {ClientEndPoint} превысил количество возможных запросов. Доступ будет разрешен через {clientsPool.Find(f => f.EndPoint.Port == ClientEndPoint.Port).shutDownTime - DateTime.UtcNow}";
 							udpServer.Send(Encoding.UTF8.GetBytes(answer), Encoding.UTF8.GetBytes(answer).Length, ClientEndPoint);
-							Console.WriteLine(answer);
+							SendServiceMessege(answer);
 							if (clientsPool.Find(f => f.EndPoint.Port == ClientEndPoint.Port).shutDownTime < DateTime.UtcNow)
 							{
 								clientsPool.Find(f => f.EndPoint.Port == ClientEndPoint.Port).RequesNumber = 0;
@@ -108,24 +125,21 @@ namespace ServerUDP
 						}
 						else
 						{
-							string answer = $"Сервер может обрабатывать запросы {MaxClientConnected} пользователей";
+							string answer = $"Сервер не может обрабатывать запросы более {MaxClientConnected} пользователей";
 							udpServer.Send(Encoding.UTF8.GetBytes(answer), Encoding.UTF8.GetBytes(answer).Length, ClientEndPoint);
-							Console.ForegroundColor = ConsoleColor.Red;
-							Console.WriteLine(answer);
-							Console.ForegroundColor = ConsoleColor.White;
+							SendServiceMessege(answer);
 						}
 					}
 				}
 				catch (Exception ex)
 				{
-					Console.WriteLine(ex.Message);
-					Console.WriteLine($"Исключение!");
+					SendServiceMessege(ex.Message);
 				}
 				finally
 				{
 					clientsPool.Clear();
 					udpServer.Close();
-					Console.WriteLine($"Переподключение!");
+					SendServiceMessege($"Переподключение!");
 				}
 			}
 
@@ -137,9 +151,7 @@ namespace ServerUDP
 				{
 					foreach (var item in clientsPool)
 					{
-						Console.ForegroundColor = ConsoleColor.Green;
-						Console.WriteLine($"Клиент {item.EndPoint} делал запрос {(timeNow - item.connTime) / 10000000} секунд назад");
-						Console.ForegroundColor = ConsoleColor.White;
+						SendServiceMessege($"Клиент {item.EndPoint} делал запрос {(timeNow - item.connTime) / 10000000} секунд назад");
 						if (((timeNow - item.connTime) / 10000000) >= ClientTimeLimit)
 						{
 							//clientsPool.Remove(item);
@@ -153,7 +165,7 @@ namespace ServerUDP
 							clientsPool.Remove(item);
 						}
 					}
-					Console.WriteLine($"Текущее количество активных клиентов: {clientsPool.Count}");
+					SendServiceMessege($"Текущее количество активных клиентов: {clientsPool.Count}");
 				}
 			}
 
@@ -169,6 +181,8 @@ namespace ServerUDP
 						temp.Add(Encoding.UTF8.GetBytes(item.Cooking));
 					}
 				}
+
+
 				var iterations = Encoding.UTF8.GetBytes(counter.ToString());
 				udpServer.Send(iterations, iterations.Length, ClientEndPoint);
 				foreach (var item in temp)
@@ -178,9 +192,5 @@ namespace ServerUDP
 				}
 			}
 		}
-
-		//Определяет IP-адресс удаленного хоста
-		//IPHostEntry entry = Dns.GetHostEntry("top-academy.ru");
-		//Console.WriteLine(entry.AddressList.FirstOrDefault(a => a.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork));
 	}
 }
