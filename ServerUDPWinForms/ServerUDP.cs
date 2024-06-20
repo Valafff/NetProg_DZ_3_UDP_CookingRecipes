@@ -21,6 +21,8 @@ namespace ServerUDP
 		public int MaxClientConnected = 5;
 		public int MaxClientRequest = 5;
 		public int ClientTimeLimit = 15;
+		const int datagrammMaxLenght = 8192;
+		bool work = true;
 
 
 		UdpClient udpServer = new UdpClient();
@@ -34,6 +36,7 @@ namespace ServerUDP
 			public int RequesNumber;
 			public DateTime shutDownTime;
 			public bool shutdown = false;
+
 		}
 
 		public ServerUDP(List<Recipe> _Recipes)
@@ -57,20 +60,21 @@ namespace ServerUDP
 
 		public void StopServer()
 		{
-			udpServer.Close();
 			SendServiceMessege("Сервер остановлен!");
+			work = false;
 		}
 
 		public void ServerStart()
 		{
-			SendServiceMessege($"Сервер запущен! Размер буфера на прием равен {udpServer.Client.ReceiveBufferSize} Размер буфера на передачу равен {udpServer.Client.SendBufferSize}");
+			
 			while (true)
 			{
 				udpServer = new UdpClient(serverPort);
+				SendServiceMessege($"Сервер запущен! Размер буфера на прием равен {udpServer.Client.ReceiveBufferSize} Размер буфера на передачу равен {udpServer.Client.SendBufferSize} Фрагментация IP дейтаграммы {udpServer.DontFragment}");
 
 				try
 				{
-					while (true)
+					while (work)
 					{
 						//!!!При получении первого пакета - узнаю конечную точку отправителя(клиента)	
 						byte[] udpReceiveResult = udpServer.Receive(ref ClientEndPoint);
@@ -116,6 +120,7 @@ namespace ServerUDP
 								clientsPool.Find(f => f.EndPoint.Port == ClientEndPoint.Port).shutdown = true;
 							}
 							string answer = $"Клиент {ClientEndPoint} превысил количество возможных запросов. Доступ будет разрешен через {clientsPool.Find(f => f.EndPoint.Port == ClientEndPoint.Port).shutDownTime - DateTime.UtcNow}";
+							
 							udpServer.Send(Encoding.UTF8.GetBytes(answer), Encoding.UTF8.GetBytes(answer).Length, ClientEndPoint);
 							SendServiceMessege(answer);
 							if (clientsPool.Find(f => f.EndPoint.Port == ClientEndPoint.Port).shutDownTime < DateTime.UtcNow)
@@ -139,7 +144,11 @@ namespace ServerUDP
 				{
 					clientsPool.Clear();
 					udpServer.Close();
-					SendServiceMessege($"Переподключение!");
+					if (work)
+					{
+						SendServiceMessege($"Переподключение!");
+					}
+
 				}
 			}
 
@@ -185,11 +194,77 @@ namespace ServerUDP
 
 				var iterations = Encoding.UTF8.GetBytes(counter.ToString());
 				udpServer.Send(iterations, iterations.Length, ClientEndPoint);
+
+				//Отправка одного и более рецептов
 				foreach (var item in temp)
 				{
-					udpServer.Send(item, item.Length, ClientEndPoint);
-					udpServer.Client.SendTimeout = 10;
+					var tempItem = (byte[])item.Clone();
+
+					//Если объект не помещается в буфер
+					if (tempItem.Length > datagrammMaxLenght)
+					{
+						int actualBuffer = datagrammMaxLenght;
+						do 
+						{
+							var t = udpServer.Send(tempItem, actualBuffer, ClientEndPoint);
+							if (tempItem.Length < datagrammMaxLenght){break;}
+
+							//Если объект все равно не лезет в буфер
+							if (tempItem.Length > datagrammMaxLenght)
+							{
+								var itemList = tempItem.ToList();
+								itemList.RemoveRange(0, datagrammMaxLenght);
+								tempItem = itemList.ToArray();
+								if (tempItem.Length < datagrammMaxLenght)
+								{
+									actualBuffer = tempItem.Length;
+								}
+							}
+						} while (true);
+						udpServer.Client.SendTimeout = 10;
+					}
+					else 
+					{
+						var t = udpServer.Send(item, item.Length, ClientEndPoint);
+						udpServer.Client.SendTimeout = 10;
+					}
 				}
+
+				////Отправка одного и более рецептов
+				//foreach (var item in temp)
+				//{
+				//	if (item.Length > datagrammMaxLenght)
+				//	{
+				//		int step = 0;
+				//		while (item.Length != 0)
+				//		{
+				//			var t = udpServer.Send(item, datagrammMaxLenght + step, ClientEndPoint);
+				//			SendServiceMessege($"byte {t}'\t");
+				//			//Если объект не помещается в буфер, то 
+				//			if ((item.Length - datagrammMaxLenght + step) > datagrammMaxLenght)
+				//			{
+				//				var itemList = item.ToList();
+				//				itemList.RemoveRange(0, datagrammMaxLenght);
+				//				item. = itemList.ToArray();
+				//			}
+				//			else
+				//			{
+				//				step += (item.Length - datagrammMaxLenght);
+				//			}
+				//		}
+				//		udpServer.Client.SendTimeout = 10;
+
+
+
+				//	}
+				//	else
+				//	{
+				//		var t = udpServer.Send(item, item.Length, ClientEndPoint);
+				//		SendServiceMessege($"byte {t}'\t");
+				//		udpServer.Client.SendTimeout = 10;
+				//	}
+
+				//}
 			}
 		}
 	}
